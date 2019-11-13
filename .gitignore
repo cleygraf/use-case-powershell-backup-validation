@@ -42,3 +42,4 @@ Thumbs.db
 credential/
 config/TestConf.json
 environment/TestEnv.json
+TestSummary.json

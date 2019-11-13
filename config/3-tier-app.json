@@ -8,7 +8,9 @@
             "testNetwork": "VLAN50_Servers_Mount",
             "testGateway": "172.17.50.1",
             "testSubnet": "24",
-            "tasks": ["Ping","Netlogon"]
+            "tasks": ["Ping","Ports","URLs"],
+            "Ports" : [80,443], 
+            "URLs" : ["http://MOUNT-3TIER-WEB/","https://MOUNT-3TIER-WEB/"]
         },
         {
             "name": "SE-CWAHL-WIN",
@@ -18,7 +20,7 @@
             "testNetwork": "VLAN50_Servers_Mount",
             "testGateway": "172.17.50.1",
             "testSubnet": "24",
-            "tasks": ["Ping","Netlogon"]
+            "tasks": ["Ping"]
         },
         {
             "name": "SE-CWAHL-WIN",
@@ -28,7 +30,8 @@
             "testNetwork": "VLAN50_Servers_Mount",
             "testGateway": "172.17.50.1",
             "testSubnet": "24",
-            "tasks": ["Ping","Netlogon"]
+            "tasks": ["Ping","Services"],
+            "Services" : ["MSSQLSERVER"]
         }
     ]
 }

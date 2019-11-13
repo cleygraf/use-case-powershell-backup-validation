@@ -46,16 +46,12 @@ task CreateLiveMount {
     [Array]$Script:MountArray = $null
     foreach ($VM in $Config.virtualMachines) {
         # Check if there is already an existing live mount with the same name
-        if ( ( $MountTest = (Get-RubrikMount).mountedVmId | Where-Object {$_.total -ne 0} ) ) {
-            if ($MountTest |
-                ForEach-Object {
-                    (Get-RubrikVM -ID $_ -EA 0).name
-                } | Select-String -Pattern "^$($VM.mountName)$" ) {
-                throw "The live mount $($VM.mountName) already exists. Please remove manually."
-            }
-        }
-        # The resulting Live Mount has the network interface disabled         
-        $MountRequest = Get-RubrikVM $VM.name |
+        Write-Verbose -Message "$($VM.mountName): Checking for an existing live mount" -Verbose
+        if ( ( (Get-RubrikMount | Measure-Object).count -gt 0 ) -AND `
+        ( ( Get-RubrikMount | Where-Object { ("$($_.mountedVmId.Trim)" -ne "") -AND ((Get-RubrikVM -ID $_.mountedVmId).name -eq "$($VM.mountName)") } | Measure-Object ).count -gt 0 ) ) {
+                throw "The live mount $($VM.mountName) already exists. Please remove manually or call `"clean`" task."
+        }  
+       $MountRequest = Get-RubrikVM $VM.name |
             Get-RubrikSnapshot -Date (Get-Date) | Where-Object {$_.id} | ForEach-Object {
                 New-RubrikMount -Id $_.id -MountName $VM.mountName -PowerOn:$true -DisableNetwork:$true -Confirm:$false
             }
@@ -206,34 +202,111 @@ task MoveLiveMountNetworkAddress {
 
 # Synopsis: Validate the Live Mount against one or more tests to verify the backup copy is operational
 task LiveMountTest {
+    $SummaryJsonPath = "./TestSummary.json"
+    $TestResults = @()
+    $TestsDone = @()
     $i = 0
-    foreach ($Mount in $MountArray) {
-        Write-Verbose -Message "$($Config.virtualMachines[$i].mountName) Test Status: Loading the following tests - $($Config.virtualMachines[$i].tasks)" -Verbose
+    foreach ($VM in $Config.virtualMachines) {
+        Write-Verbose -Message "$($VM.mountName) Test Status: Loading the following tests - $($VM.tasks)" -Verbose
         # Keeping the guest credential value local since it may only apply to the individual virtual machine in some cases
         # Not all tests will need a guest credential, but it's there in case required
         # Try per vm guest credentials first
         if ( Get-Variable -Name "$Config.virtualMachines[$i].guestCred" -ErrorAction SilentlyContinue ) {
-            Write-Verbose -Message "Importing Credential file: $($IdentityPath + $($Config.virtualMachines[$i].guestCred))" -Verbose
-        $GuestCredential = Import-Clixml -Path ($IdentityPath + $($Config.virtualMachines[$i].guestCred))
+            Write-Verbose -Message "Importing Credential file: $($IdentityPath + $($VM.guestCred))" -Verbose
+        $GuestCredential = Import-Clixml -Path ($IdentityPath + $($VM.guestCred))
         }
         # Use global guest credentials
         else {
             Write-Verbose -Message "Importing Credential file: $($IdentityPath + "guestCred.XML")" -Verbose
             $GuestCredential = Import-Clixml -Path ($IdentityPath + "guestCred.XML")
         }
-        Invoke-Build -File .\tests.ps1 -Task $Config.virtualMachines[$i].tasks -Config $Config.virtualMachines[$i] -GuestCredential $GuestCredential
-        Write-Verbose -Message "$($Config.virtualMachines[$i].mountName) Test Status: Testing complete" -Verbose
+        $newTestRun = @()
+        $newTestRun = [PSCustomObject]@{ "Name" = $VM.name }
+        # Do the tests one by one
+        foreach ($taskToRun in $VM.tasks){
+            switch ($taskToRun){
+                # Check for open Ports
+                "Ports" {
+                    foreach ($PortToTest in $VM.Ports){
+                        try {
+                            Invoke-Build -File .\tests.ps1 -Task Port -Config $VM -GuestCredential $GuestCredential -PortToTest $PortToTest
+                            # Test successful
+                            $newTestRun | Add-Member -MemberType NoteProperty -Name "Port $($PortToTest)" -Value "successful"
+                            $TestsDone += "Port $($PortToTest)"
+                        }
+                        catch {
+                            # Test not successful
+                            $newTestRun | Add-Member -MemberType NoteProperty -Name "Port $($PortToTest)" -Value "failed"
+                            $TestsDone += "Port $($PortToTest)"
+                        }
+                    }
+                }
+                "Services" {
+                    foreach ($ServiceToTest in $VM.Services){
+                        try {
+                            Invoke-Build -File .\tests.ps1 -Task Service -Config $VM -GuestCredential $GuestCredential -ServiceToTest $ServiceToTest
+                            $newTestRun | Add-Member -MemberType NoteProperty -Name "Service $($ServiceToTest)" -Value "successful"
+                            $TestsDone += "Service $($ServiceToTest)"
+                        }
+                        catch {
+                            # Test not successful
+                            $newTestRun | Add-Member -MemberType NoteProperty -Name "Service $($ServiceToTest)" -Value "failed"
+                            $TestsDone += "Service $($ServiceToTest)"
+                        }
+                    }
+                }
+                "URLs" {
+                    foreach ($UrlToTest in $VM.URLs){
+                        try {
+                            Invoke-Build -File .\tests.ps1 -Task URL -Config $VM -GuestCredential $GuestCredential -UrlToTest $UrlToTest
+                            $newTestRun | Add-Member -MemberType NoteProperty -Name "URL $($UrlToTest)" -Value "successful"
+                            $TestsDone += "URL $($UrlToTest)"
+                        }
+                        catch {
+                            # Test not successful
+                            $newTestRun | Add-Member -MemberType NoteProperty -Name "URL $($UrlToTest)" -Value "failed"
+                            $TestsDone += "URL $($UrlToTest)"
+                        }
+                    }
+                }
+                # Additional tests defined in tests.ps
+                default {    
+                    try {
+                        Invoke-Build -File .\tests.ps1 -Task $taskToRun -Config $VM -GuestCredential $GuestCredential
+                        # Test successful
+                        $newTestRun | Add-Member -MemberType NoteProperty -Name "$taskToRun" -Value "successful"
+                        $TestsDone += "$taskToRun"
+                    }
+                    catch {
+                        # Test not successful
+                        $newTestRun | Add-Member -MemberType NoteProperty -Name "$taskToRun" -Value "failed"
+                        $TestsDone += "$taskToRun"
+                    }
+                }
+            }
+        }
+        $TestResults += $newTestRun
         $i++
     }
+    $TestResults | ConvertTo-Json | Set-Content  -Path $SummaryJsonPath
+    $TestsDone | %{ if (!([bool]($TestResults[0].PSobject.Properties.name -match "$_"))){ $TestResults[0] | Add-Member -MemberType NoteProperty -Name "$_" -Value ""}}
+    [PsCustomObject]$TestResults | Format-Table -AutoSize
 }
 
 # Synopsis: Remove any remaining Live Mount artifacts
 task Cleanup {
     $i = 0
-    foreach ($Mount in $MountArray) {
-        # The request may take a few seconds to complete, but it's not worth holding up the build waiting for the task
-        $UnmountRequest = Get-RubrikMount -id (Get-RubrikRequest -id $Mount.id -Type vmware/vm).links.href[0].split('/')[-1] | Remove-RubrikMount -Force -Confirm:$false
-        Write-Verbose -Message "$($Config.virtualMachines[$i].mountName) Removal Status: $($UnmountRequest.id) is $($UnmountRequest.status)" -Verbose        
+    foreach ($VM in $Config.virtualMachines) {
+        # Remove existing live mounts 
+        Write-Verbose -Message "$($VM.mountName): Checking for an existing live mount" -Verbose
+        if ( ( (Get-RubrikMount | Measure-Object).count -gt 0) -AND `
+        ( ( Get-RubrikMount | Where { ("$($_.mountedVmId.Trim)" -ne "") -AND ((Get-RubrikVM -ID $_.mountedVmId).name -eq "$($VM.mountName)") } | Measure-Object ).count -gt 0 ) ) {
+            Get-RubrikMount | where { ("$($_.mountedVmId.Trim)" -ne "") -AND ((Get-RubrikVM -ID $_.mountedVmId).name -eq "$($VM.mountName)") } |
+            ForEach-Object {
+                [void](Remove-RubrikMount -ID $_.id -Confirm:$False)
+                Write-Verbose -Message "$((Get-RubrikVM -ID $_.mountedVmId).name): Request created to remove live mount" -Verbose
+            }
+        }   
         $i++
     }
 }
@@ -257,6 +330,22 @@ MoveLiveMountNetwork
 
 task 5_Testing `
 LiveMountTest
+
+task prep `
+1_Init,
+2_Connect,
+3_LiveMount,
+4_LiveMountNetwork
+
+task test `
+1_Init,
+2_Connect,
+5_Testing
+
+task clean `
+1_Init,
+2_Connect,
+Cleanup
 
 task . `
 1_Init,

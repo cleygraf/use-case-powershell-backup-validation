@@ -8,7 +8,10 @@
             "testNetwork": "VLAN50_Servers_Mount",
             "testGateway": "172.17.50.1",
             "testSubnet": "24",
-            "tasks": ["Ping","Netlogon"]
+            "tasks": ["Ping","Ports","Services","URLs"],
+            "Ports" : [80,443], 
+            "Services" : ["MSSQLSERVER"],
+            "URLs" : ["http://MOUNT-1TIER-APP/","https://MOUNT-1TIER-APP/"]
         }
     ]
 }

@@ -8,7 +8,9 @@
             "testNetwork": "VLAN50_Servers_Mount",
             "testGateway": "172.17.50.1",
             "testSubnet": "24",
-            "tasks": ["Ping","Netlogon"]
+            "tasks": ["Ping","Ports","URLs"],
+            "Ports" : [80,443], 
+            "URLs" : ["http://MOUNT-2TIER-APP/","https://MOUNT-2TIER-APP/"]
         },
         {
             "name": "SE-CWAHL-WIN",
@@ -18,7 +20,8 @@
             "testNetwork": "VLAN50_Servers_Mount",
             "testGateway": "172.17.50.1",
             "testSubnet": "24",
-            "tasks": ["Ping","Netlogon"]
+            "tasks": ["Ping","Services"],
+            "Services" : ["MSSQLSERVER"]
         }
     ]
 }
