@@ -15,7 +15,9 @@ param (
 
 # Synopsis: Pull configuration details from the root config.json file
 task GetConfig {
+    Write-Verbose -Message "Reading environment file: $($EnvironmentFile)"
     $script:Environment = Get-Content -Path $EnvironmentFile | ConvertFrom-Json
+    Write-Verbose -Message "Reading configuration file: $($ConfigFile)"
     $script:Config = Get-Content -Path $ConfigFile | ConvertFrom-Json
     # If a trailing backslash is omitted, this will make sure it's added to correct for future path + filename activities
     if ($IdentityPath.Substring($IdentityPath.Length - 1) -ne '\') {
