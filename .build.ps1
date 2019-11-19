@@ -118,7 +118,7 @@ task ValidateRemoteScriptExecution {
         while ($true) {
             Write-Verbose -Message "Testing script execution on '$($Config.virtualMachines[$i].mountName)', attempt '$LoopCount'..." -Verbose
             $splat = @{
-                ScriptText      = 'hostname'
+                ScriptText      = 'Set-ExecutionPolicy -Confirm:$false -Force -Scope CurrentUser RemoteSigned'
                 ScriptType      = 'PowerShell'
                 VM              = $Config.virtualMachines[$i].mountName
                 GuestCredential = $GuestCredential
@@ -169,22 +169,41 @@ task MoveLiveMountNetworkAddress {
             Write-Verbose -Message "Importing Credential file: $($IdentityPath + "guestCred.XML")"
             $GuestCredential = Import-Clixml -Path ($IdentityPath + "guestCred.XML")
         }
-        $TestInterfaceMAC = ((Get-NetworkAdapter -VM $Config.virtualMachines[$i].mountName | Select-Object -first 1).MacAddress).ToLower() -replace ":","-"
+        If ( "$((Get-VM -Name $Config.virtualMachines[$i].mountName).Guest.ConfiguredGuestId)" -eq "windows7Server64Guest" ) {
+            $SubnetBits = ('1' * $Config.virtualMachines[$i].testSubnet).PadRight(32, "0")
+            $Octets = $SubnetBits -split '(.{8})' -ne ''
+            $Mask = ($Octets | ForEach-Object -Process {[Convert]::ToInt32($_, 2) }) -join '.'
+            $TestInterfaceMAC = ((Get-NetworkAdapter -VM $Config.virtualMachines[$i].mountName | Select-Object -first 1).MacAddress).ToUpper()
+            $ScriptText = 'Get-WMIObject Win32_NetworkAdapterConfiguration | where{$_.MACAddress -eq "' + $TestInterfaceMAC + '"} |`
+                           foreach { $_.EnableStatic("' + $Config.virtualMachines[$i].testIp + '","' + $Mask + '");`
+                           $_.SetGateways("' + $Config.virtualMachines[$i].testGateway + '")  }'
+        }
+        else {
+            $TestInterfaceMAC = ((Get-NetworkAdapter -VM $Config.virtualMachines[$i].mountName | Select-Object -first 1).MacAddress).ToLower() -replace ":","-"
+            $ScriptText = 'Get-NetAdapter | where {($_.MacAddress).ToLower() -eq "' + $TestInterfaceMAC + '"} | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue;`
+                           Get-NetAdapter | where {($_.MacAddress).ToLower() -eq "' + $TestInterfaceMAC + '"} | Get-NetIPAddress | Remove-NetIPAddress -confirm:$false;`
+                           Get-NetAdapter | where {($_.MacAddress).ToLower() -eq "' + $TestInterfaceMAC + '"} | Set-NetIPInterface -DHCP Disable;`
+                           Get-NetAdapter | where {($_.MacAddress).ToLower() -eq "' + $TestInterfaceMAC + '"} | `
+                           New-NetIPAddress -IPAddress ' + $Config.virtualMachines[$i].testIp + ' -PrefixLength ' + $Config.virtualMachines[$i].testSubnet + `
+                           ' -DefaultGateway ' + $Config.virtualMachines[$i].testGateway
+        }
         $splat = @{
-            ScriptText      = 'Get-NetAdapter | where {($_.MacAddress).ToLower() -eq "' + $TestInterfaceMAC + '"} | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue;`
-                               Get-NetAdapter | where {($_.MacAddress).ToLower() -eq "' + $TestInterfaceMAC + '"} | Get-NetIPAddress | Remove-NetIPAddress -confirm:$false;`
-                               Get-NetAdapter | where {($_.MacAddress).ToLower() -eq "' + $TestInterfaceMAC + '"} | Set-NetIPInterface -DHCP Disable;`
-                               Get-NetAdapter | where {($_.MacAddress).ToLower() -eq "' + $TestInterfaceMAC + '"} | `
-                               New-NetIPAddress -IPAddress ' + $Config.virtualMachines[$i].testIp + ' -PrefixLength ' + $Config.virtualMachines[$i].testSubnet + `
-                               ' -DefaultGateway ' + $Config.virtualMachines[$i].testGateway
+            ScriptText      = $ScriptText
             ScriptType      = 'PowerShell'
             VM              = $Config.virtualMachines[$i].mountName
             GuestCredential = $GuestCredential
         }
-        Write-Verbose -Message "Changing ip of $($Config.virtualMachines[$i].mountName) to $($Config.virtualMachines[$i].testIp)." -Verbose
+        Write-Verbose -Message "Changing ip of $($Config.virtualMachines[$i].mountName)($((Get-VM -Name $Config.virtualMachines[$i].mountName).Guest.ConfiguredGuestId )) to $($Config.virtualMachines[$i].testIp)." -Verbose
         $output = Invoke-VMScript @splat -ErrorAction Stop
+        If ( "$((Get-VM -Name $Config.virtualMachines[$i].mountName).Guest.ConfiguredGuestId)" -eq "windows7Server64Guest" ) {
+            $TestInterfaceMAC = ((Get-NetworkAdapter -VM $Config.virtualMachines[$i].mountName | Select-Object -first 1).MacAddress).ToUpper()
+            $ScriptText = 'write "' + $Config.virtualMachines[$i].testIp + '"'
+        }
+        else {
+            $ScriptText = '(Get-NetAdapter| where {($_.MacAddress).ToLower() -eq "' + $TestInterfaceMAC + '"} | Get-NetIPAddress -AddressFamily IPv4).IPAddress'
+        }
         $splat = @{
-            ScriptText      = '(Get-NetAdapter| where {($_.MacAddress).ToLower() -eq "' + $TestInterfaceMAC + '"} | Get-NetIPAddress -AddressFamily IPv4).IPAddress'
+            ScriptText      = $ScriptText
             ScriptType      = 'PowerShell'
             VM              = $Config.virtualMachines[$i].mountName
             GuestCredential = $GuestCredential

@@ -1,0 +1,16 @@
+{
+  "virtualMachines": [
+    {
+      "tasks": [
+        "Ping"
+      ],
+      "mountName": "win2k8r2-test",
+      "testSubnet": "24",
+      "testGateway": "100.100.100.251",
+      "testIp": "100.100.100.244",
+      "name": "win2k8r2",
+      "testNetwork": "VM Network",
+      "guestCred": "GuestCred.xml"
+    }
+  ]
+}

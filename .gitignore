@@ -43,3 +43,4 @@ credential/
 config/TestConf.json
 environment/TestEnv.json
 TestSummary.json
+config/TestConf-UAC.json
