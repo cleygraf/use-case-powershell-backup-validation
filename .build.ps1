@@ -15,7 +15,9 @@ param (
 
 # Synopsis: Pull configuration details from the root config.json file
 task GetConfig {
+    Write-Verbose -Message "Reading environment file: $($EnvironmentFile)"
     $script:Environment = Get-Content -Path $EnvironmentFile | ConvertFrom-Json
+    Write-Verbose -Message "Reading configuration file: $($ConfigFile)"
     $script:Config = Get-Content -Path $ConfigFile | ConvertFrom-Json
     # If a trailing backslash is omitted, this will make sure it's added to correct for future path + filename activities
     if ($IdentityPath.Substring($IdentityPath.Length - 1) -ne '\') {
@@ -52,7 +54,7 @@ task CreateLiveMount {
                 throw "The live mount $($VM.mountName) already exists. Please remove manually or call `"clean`" task."
         }  
        $MountRequest = Get-RubrikVM $VM.name |
-            Get-RubrikSnapshot -Date (Get-Date) | Where-Object {$_.id} | ForEach-Object {
+            Get-RubrikSnapshot -Date (Get-Date) | Where-Object {$_.id} | Select-Object -Last 1 | ForEach-Object {
                 New-RubrikMount -Id $_.id -MountName $VM.mountName -PowerOn:$true -DisableNetwork:$true -Confirm:$false
             }
         Write-Verbose -Message "$($Config.virtualMachines[$i].mountName) Request Created: $($MountRequest.id)" -Verbose
@@ -289,7 +291,11 @@ task LiveMountTest {
         $i++
     }
     $TestResults | ConvertTo-Json | Set-Content  -Path $SummaryJsonPath
-    $TestsDone | %{ if (!([bool]($TestResults[0].PSobject.Properties.name -match "$_"))){ $TestResults[0] | Add-Member -MemberType NoteProperty -Name "$_" -Value ""}}
+    $TestsDone | ForEach-Object{ 
+        if (!([bool]($TestResults[0].PSobject.Properties.name -match "$_"))){
+            $TestResults[0] | Add-Member -MemberType NoteProperty -Name "$_" -Value ""
+        }
+    }
     [PsCustomObject]$TestResults | Format-Table -AutoSize
 }
 
@@ -300,8 +306,8 @@ task Cleanup {
         # Remove existing live mounts 
         Write-Verbose -Message "$($VM.mountName): Checking for an existing live mount" -Verbose
         if ( ( (Get-RubrikMount | Measure-Object).count -gt 0) -AND `
-        ( ( Get-RubrikMount | Where { ("$($_.mountedVmId.Trim)" -ne "") -AND ((Get-RubrikVM -ID $_.mountedVmId).name -eq "$($VM.mountName)") } | Measure-Object ).count -gt 0 ) ) {
-            Get-RubrikMount | where { ("$($_.mountedVmId.Trim)" -ne "") -AND ((Get-RubrikVM -ID $_.mountedVmId).name -eq "$($VM.mountName)") } |
+        ( ( Get-RubrikMount | Where-Object { ("$($_.mountedVmId.Trim)" -ne "") -AND ((Get-RubrikVM -ID $_.mountedVmId).name -eq "$($VM.mountName)") } | Measure-Object ).count -gt 0 ) ) {
+            Get-RubrikMount | Where-Object { ("$($_.mountedVmId.Trim)" -ne "") -AND ((Get-RubrikVM -ID $_.mountedVmId).name -eq "$($VM.mountName)") } |
             ForEach-Object {
                 [void](Remove-RubrikMount -ID $_.id -Confirm:$False)
                 Write-Verbose -Message "$((Get-RubrikVM -ID $_.mountedVmId).name): Request created to remove live mount" -Verbose
