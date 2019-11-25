@@ -15,9 +15,9 @@ param (
 
 # Synopsis: Pull configuration details from the root config.json file
 task GetConfig {
-    Write-Verbose -Message "Reading environment file: $($EnvironmentFile)"
+    Write-Verbose -Message "Reading environment file: $($EnvironmentFile)" -Verbose
     $script:Environment = Get-Content -Path $EnvironmentFile | ConvertFrom-Json
-    Write-Verbose -Message "Reading configuration file: $($ConfigFile)"
+    Write-Verbose -Message "Reading configuration file: $($ConfigFile)" -Verbose
     $script:Config = Get-Content -Path $ConfigFile | ConvertFrom-Json
     # If a trailing backslash is omitted, this will make sure it's added to correct for future path + filename activities
     if ($IdentityPath.Substring($IdentityPath.Length - 1) -ne '\') {
@@ -53,10 +53,10 @@ task CreateLiveMount {
         ( ( Get-RubrikMount | Where-Object { ("$($_.mountedVmId.Trim)" -ne "") -AND ((Get-RubrikVM -ID $_.mountedVmId).name -eq "$($VM.mountName)") } | Measure-Object ).count -gt 0 ) ) {
                 throw "The live mount $($VM.mountName) already exists. Please remove manually or call `"clean`" task."
         }  
-       $MountRequest = Get-RubrikVM $VM.name |
-            Get-RubrikSnapshot -Date (Get-Date) | Where-Object {$_.id} | Select-Object -Last 1 | ForEach-Object {
-                New-RubrikMount -Id $_.id -MountName $VM.mountName -PowerOn:$true -DisableNetwork:$true -Confirm:$false
-            }
+        $LatestSnapshot = Get-RubrikVM $VM.name | Get-RubrikSnapshot -Date (Get-Date) | Where-Object {$_.id} |
+            Sort-Object -Property date | Select-Object -Last 1 
+        $MountRequest = New-RubrikMount -Id $LatestSnapshot.id -MountName $VM.mountName -PowerOn:$true -DisableNetwork:$true -Confirm:$false
+        Write-Verbose -Message "Latest snapshot of $($Config.virtualMachines[$i].mountName) is from $($LatestSnapshot.date)" -Verbose
         Write-Verbose -Message "$($Config.virtualMachines[$i].mountName) Request Created: $($MountRequest.id)" -Verbose
         $Script:MountArray += $MountRequest
         $i++
