@@ -209,7 +209,7 @@ task LiveMountTest {
     $TestsDone = @()
     $i = 0
     foreach ($VM in $Config.virtualMachines) {
-        Write-Verbose -Message "$($VM.mountName) Test Status: Loading the following tests - $($VM.tasks)" -Verbose
+        Write-Verbose -Message "Loading the following tests for $($VM.mountName): $($VM.tasks)" -Verbose
         # Keeping the guest credential value local since it may only apply to the individual virtual machine in some cases
         # Not all tests will need a guest credential, but it's there in case required
         # Try per vm guest credentials first
@@ -234,7 +234,6 @@ task LiveMountTest {
                             Invoke-Build -File .\tests.ps1 -Task Port -Config $VM -GuestCredential $GuestCredential -PortToTest $PortToTest
                             # Test successful
                             $newTestRun | Add-Member -MemberType NoteProperty -Name "Port $($PortToTest)" -Value "successful"
-                            $TestsDone += "Port $($PortToTest)"
                         }
                         catch {
                             # Test not successful
